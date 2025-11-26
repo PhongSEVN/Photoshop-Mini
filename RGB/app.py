@@ -131,6 +131,7 @@ class ImageApp(tk.Tk):
             "Kiểm tra kênh Alpha (RGBA)",
             "Tính 4 chỉ số (ma trận/ảnh)",
             "Biến đổi ảnh",
+            "Kéo dãn độ tương phản"
         ]
         for f in funcs:
             self.func_listbox.insert(tk.END, f)
@@ -248,6 +249,9 @@ class ImageApp(tk.Tk):
             self._show_metrics_function()
         elif idx == 6:
             self._show_transform_function()
+        elif idx == 7:
+            self._show_contrast_stretch_function()
+
 
     def _show_save_function(self):
         title = tk.Label(self.info_frame, text="Lưu ảnh sang định dạng khác",
@@ -470,7 +474,7 @@ class ImageApp(tk.Tk):
             btn.grid(row=i, column=0, pady=5, sticky='ew')
 
     def _show_transform_function(self):
-        title = tk.Label(self.info_frame, text="✨ Biến đổi ảnh",
+        title = tk.Label(self.info_frame, text="Biến đổi ảnh",
                         font=('Segoe UI', 12, 'bold'),
                         bg='white', fg='#2c3e50')
         title.pack(anchor='w', pady=(0, 10))
@@ -736,6 +740,133 @@ class ImageApp(tk.Tk):
 
         self.processed_image = result
         self.show_image(result)
+    def _show_contrast_stretch_function(self):
+        title = tk.Label(self.info_frame, text="Kéo dãn độ tương phản",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+        title.pack(anchor='w', pady=(0, 10))
+
+        if self.original_image is None:
+            tk.Label(self.info_frame, text="Vui lòng tải ảnh lên trước.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+            return
+
+        # Frame chọn loại
+        mode_var = tk.StringVar(value="linear")
+        mode_frame = tk.Frame(self.info_frame, bg='white')
+        mode_frame.pack(anchor='w')
+
+        tk.Radiobutton(mode_frame, text="Loại 1 (Tuyến tính)", variable=mode_var,
+                    value="linear", bg='white',
+                    command=lambda: refresh_sliders()).pack(anchor='w')
+
+        tk.Radiobutton(mode_frame, text="Loại 2 (Từng phần)", variable=mode_var,
+                    value="piecewise", bg='white',
+                    command=lambda: refresh_sliders()).pack(anchor='w')
+
+        # Frame chứa sliders
+        slider_frame = tk.Frame(self.info_frame, bg='white')
+        slider_frame.pack(anchor='w', pady=10)
+
+        # Các biến
+        r_min_var = tk.IntVar(value=50)
+        r_max_var = tk.IntVar(value=200)
+        l0_var = tk.IntVar(value=50)
+        l1_var = tk.IntVar(value=200)
+
+        def apply_now(*args):
+            self.apply_contrast_stretch(
+                mode_var.get(),
+                r_min_var.get(),
+                r_max_var.get(),
+                l0_var.get(),
+                l1_var.get()
+            )
+
+        def add_slider(parent, text, var, frm=0, to=255):
+            tk.Label(parent, text=text, bg='white',
+                    font=('Segoe UI', 9, 'bold')).pack(anchor='w')
+            scale = tk.Scale(parent, variable=var, from_=frm, to=to,
+                            orient=tk.HORIZONTAL, length=300,
+                            bg='white', highlightthickness=0,
+                            troughcolor='#ecf0f1',
+                            command=apply_now)
+            scale.pack(anchor='w', pady=2)
+            return scale
+
+        def refresh_sliders():
+            for widget in slider_frame.winfo_children():
+                widget.destroy()
+
+            # Slider chung cho cả hai loại
+            add_slider(slider_frame, "r_min", r_min_var, 0, 255)
+            add_slider(slider_frame, "r_max", r_max_var, 0, 255)
+
+            if mode_var.get() == "piecewise":
+                add_slider(slider_frame, "l0 (vùng tối)", l0_var, 0, 255)
+                add_slider(slider_frame, "l1 (vùng sáng)", l1_var, 0, 255)
+
+            apply_now()
+
+        refresh_sliders()
+
+
+    def contrast_stretch_piecewise(self, arr, r_min, r_max, l0=50, l1=200):
+        arr = arr.astype(float)
+        out = np.zeros_like(arr)
+
+        # tối
+        mask1 = arr <= r_min
+        out[mask1] = (arr[mask1] / r_min) * l0
+
+        # giữa
+        mask2 = (arr > r_min) & (arr <= r_max)
+        out[mask2] = ((arr[mask2] - r_min) / (r_max - r_min)) * (l1 - l0) + l0
+
+        # sáng
+        mask3 = arr > r_max
+        out[mask3] = ((arr[mask3] - r_max) / (255 - r_max)) * (255 - l1) + l1
+
+        return np.clip(out, 0, 255)
+
+    def apply_contrast_stretch(self, mode, r_min, r_max, l0, l1):
+        if self.original_image is None:
+            messagebox.showwarning("Lỗi", "Chưa có ảnh!")
+            return
+
+        img = self.original_image.convert("RGB")
+        arr = np.array(img, float)
+        out = np.zeros_like(arr)
+
+        for ch in range(3):
+            channel = arr[:, :, ch]
+            if mode == "linear":
+                out[:, :, ch] = self.contrast_stretch_linear(channel, r_min, r_max)
+            else:
+                out[:, :, ch] = self.contrast_stretch_piecewise(channel, r_min, r_max, l0, l1)
+
+        out = np.clip(out, 0, 255).astype(np.uint8)
+        result = Image.fromarray(out, "RGB").convert("RGBA")
+
+        self.processed_image = result
+        self.show_image(result)
+    def contrast_stretch_linear(self, arr, r_min, r_max):
+        arr = arr.astype(float)
+
+        # tránh chia cho 0
+        if r_max <= r_min:
+            return arr
+
+        out = (arr - r_min) * (255.0 / (r_max - r_min))
+
+        # pixel < r_min → 0
+        out[arr < r_min] = 0
+
+        # pixel > r_max → 255
+        out[arr > r_max] = 255
+
+        return np.clip(out, 0, 255)
+
 
 def main():
     app = ImageApp()
