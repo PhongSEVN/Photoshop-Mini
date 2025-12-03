@@ -6,7 +6,7 @@ import numpy as np
 import os
 
 from features import grayscale, binary, red_channel, alpha, metrics, transform, contrast
-from features import histogram_equalization
+from features import histogram_equalization, histogram_matching, adaptive_histogram
 
 
 def create_save_ui(app, info_frame):
@@ -923,3 +923,383 @@ def create_histogram_equalization_ui(app, info_frame):
     # Hiển thị ảnh gốc
     app.show_image(display_image)
 
+
+# === Histogram Matching ===
+
+def create_histogram_matching_ui(app, info_frame):
+    """UI cho Histogram Matching"""
+    title = tk.Label(info_frame, text="Histogram Matching",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+
+    if app.original_image is None:
+        tk.Label(info_frame, text="Vui long tai anh nguon truoc.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+        return
+
+    state = {"ref_img": None, "matched_img": None, "photos": []}
+
+    desc = tk.Label(
+        info_frame,
+        text="Chon anh tham chieu, thuc hien matching, hien thi 3 anh va histogram.",
+        font=('Segoe UI', 9),
+        bg='white',
+        fg='#7f8c8d',
+        justify='left'
+    )
+    desc.pack(anchor='w', pady=(0, 10))
+
+    control_frame = tk.Frame(info_frame, bg='white')
+    control_frame.pack(anchor='w', pady=(0, 10), fill='x')
+
+    ref_label = tk.Label(control_frame, text="Chua chon anh tham chieu",
+                        font=('Segoe UI', 9), bg='white', fg='#7f8c8d')
+    ref_label.grid(row=0, column=0, sticky='w')
+
+    def load_reference():
+        path = filedialog.askopenfilename(
+            title="Chon anh tham chieu",
+            filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif"), ("All files", "*.*")]
+        )
+        if not path:
+            return
+        try:
+            img = Image.open(path).convert("RGBA")
+        except Exception as e:
+            messagebox.showerror("Loi", f"Khong mo duoc anh tham chieu:\n{e}")
+            return
+        state["ref_img"] = img
+        ref_label.config(text=f"Tham chieu: {os.path.basename(path)}", fg='#2ecc71')
+        refresh_previews()
+
+    load_ref_btn = tk.Button(control_frame, text="Chon anh tham chieu",
+                            command=load_reference,
+                            font=('Segoe UI', 9), bg='#3498db', fg='white',
+                            relief='flat', cursor='hand2', padx=12, pady=8)
+    load_ref_btn.grid(row=0, column=1, padx=(10, 0))
+
+    run_btn = tk.Button(control_frame, text="Thuc hien matching",
+                       command=lambda: process_matching(),
+                       font=('Segoe UI', 9, 'bold'), bg='#27ae60', fg='white',
+                       relief='flat', cursor='hand2', padx=12, pady=8)
+    run_btn.grid(row=0, column=2, padx=(10, 0))
+
+    save_btn = tk.Button(control_frame, text="Luu ket qua",
+                        command=app.save_processed,
+                        font=('Segoe UI', 9), bg='#27ae60', fg='white',
+                        relief='flat', cursor='hand2', padx=12, pady=8)
+    save_btn.grid(row=0, column=3, padx=(10, 0))
+
+    revert_btn = tk.Button(control_frame, text="Quay ve anh goc",
+                          command=lambda: app.show_image(app.original_image),
+                          font=('Segoe UI', 9), bg='#95a5a6', fg='white',
+                          relief='flat', cursor='hand2', padx=12, pady=8)
+    revert_btn.grid(row=0, column=4, padx=(10, 0))
+
+    preview_frame = tk.Frame(info_frame, bg='white')
+    preview_frame.pack(fill='x', pady=(5, 0))
+
+    img_frame = tk.Frame(preview_frame, bg='white')
+    img_frame.pack(fill='x')
+
+    hist_frame = tk.Frame(preview_frame, bg='white')
+    hist_frame.pack(fill='x', pady=(10, 0))
+
+    canvases = {}
+    hist_canvases = {}
+    labels = ["Nguon", "Tham chieu", "Ket qua"]
+    for idx, name in enumerate(labels):
+        wrapper = tk.Frame(img_frame, bg='white')
+        wrapper.grid(row=0, column=idx, padx=5)
+        tk.Label(wrapper, text=name, font=('Segoe UI', 9, 'bold'),
+                bg='white', fg='#2c3e50').pack(anchor='w')
+        c = tk.Canvas(wrapper, width=230, height=150, bg='#ecf0f1',
+                     highlightthickness=1, highlightbackground='#bdc3c7')
+        c.pack()
+        canvases[name] = c
+
+        hist_wrap = tk.Frame(hist_frame, bg='white')
+        hist_wrap.grid(row=0, column=idx, padx=5)
+        tk.Label(hist_wrap, text=f"Histogram {name}", font=('Segoe UI', 9),
+                bg='white', fg='#2c3e50').pack(anchor='w')
+        hc = tk.Canvas(hist_wrap, width=230, height=140, bg='white',
+                      highlightthickness=1, highlightbackground='#bdc3c7')
+        hc.pack()
+        hist_canvases[name] = hc
+
+    summary = tk.Label(info_frame, text="", font=('Segoe UI', 9),
+                      bg='white', fg='#2c3e50', justify='left')
+    summary.pack(anchor='w', pady=(8, 0))
+
+    def compute_histogram(pil_img):
+        if pil_img is None:
+            return None
+        arr = np.array(pil_img.convert("L"))
+        hist, _ = np.histogram(arr.flatten(), bins=256, range=[0, 256])
+        return hist
+
+    def draw_hist(canvas, hist, color="#3498db"):
+        canvas.delete("all")
+        if hist is None:
+            canvas.create_text(115, 70, text="Khong co du lieu",
+                             font=('Segoe UI', 9), fill='#7f8c8d')
+            return
+        max_val = np.max(hist) if len(hist) else 0
+        if max_val == 0:
+            return
+        w = 230
+        h = 140
+        margin = 20
+        chart_w = w - margin * 2
+        chart_h = h - margin * 2
+        for i in range(256):
+            if hist[i] == 0:
+                continue
+            x0 = margin + (i / 256.0) * chart_w
+            x1 = margin + ((i + 1) / 256.0) * chart_w
+            bar_h = (hist[i] / max_val) * chart_h
+            y0 = h - margin
+            y1 = y0 - bar_h
+            canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline=color)
+
+    def show_image_on_canvas(canvas, pil_img):
+        canvas.delete("all")
+        if pil_img is None:
+            canvas.create_text(115, 75, text="Khong co anh",
+                             font=('Segoe UI', 9), fill='#7f8c8d')
+            return
+        img = pil_img.convert("RGB").copy()
+        img.thumbnail((220, 140), Image.LANCZOS)
+        photo = ImageTk.PhotoImage(img)
+        state["photos"].append(photo)
+        canvas.create_image(115, 75, image=photo)
+
+    def refresh_previews():
+        state["photos"].clear()
+        src_img = app.original_image
+        ref_img = state["ref_img"]
+        matched_img = state["matched_img"]
+
+        show_image_on_canvas(canvases["Nguon"], src_img)
+        draw_hist(hist_canvases["Nguon"], compute_histogram(src_img))
+
+        show_image_on_canvas(canvases["Tham chieu"], ref_img)
+        draw_hist(hist_canvases["Tham chieu"], compute_histogram(ref_img))
+
+        show_image_on_canvas(canvases["Ket qua"], matched_img)
+        draw_hist(hist_canvases["Ket qua"], compute_histogram(matched_img))
+
+    def process_matching():
+        if state["ref_img"] is None:
+            messagebox.showwarning("Thieu tham chieu", "Vui long chon anh tham chieu truoc.")
+            return
+        try:
+            matched = histogram_matching.histogram_matching(app.original_image, state["ref_img"])
+            matched_rgba = matched.convert("RGBA")
+        except Exception as e:
+            messagebox.showerror("Loi", f"Khong thuc hien matching:\n{e}")
+            return
+
+        state["matched_img"] = matched_rgba
+        app.processed_image = matched_rgba
+        app.show_image(matched_rgba)
+        refresh_previews()
+
+        summary.config(text="Da khop histogram nguon sang tham chieu. Quan sat histogram 3 anh de so sanh.")
+
+    refresh_previews()
+    app.show_image(app.original_image)
+
+
+# === Adaptive Histogram Equalization ===
+
+def create_adaptive_histogram_ui(app, info_frame):
+    """UI cho Adaptive Histogram Equalization"""
+    title = tk.Label(info_frame, text="Adaptive Histogram Equalization",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+
+    if app.original_image is None:
+        tk.Label(info_frame, text="Vui long tai anh truoc.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+        return
+
+    state = {"global_img": None, "local_img": None, "photos": []}
+
+    desc = tk.Label(
+        info_frame,
+        text="So sanh can bang histogram toan cuc va can bang cuc bo (adaptive).",
+        font=('Segoe UI', 9),
+        bg='white',
+        fg='#7f8c8d',
+        justify='left'
+    )
+    desc.pack(anchor='w', pady=(0, 10))
+
+    tile_frame = tk.Frame(info_frame, bg='white')
+    tile_frame.pack(anchor='w', pady=(0, 10))
+    tk.Label(tile_frame, text="Tile size:", font=('Segoe UI', 9, 'bold'),
+            bg='white', fg='#2c3e50').grid(row=0, column=0, padx=(0, 8))
+    tile_var = tk.IntVar(value=32)
+    tk.Scale(tile_frame, from_=8, to=64, orient=tk.HORIZONTAL,
+            variable=tile_var, resolution=4, length=250,
+            bg='white', highlightthickness=0,
+            troughcolor='#ecf0f1').grid(row=0, column=1, padx=(0, 10))
+
+    tk.Button(tile_frame, text="Thuc hien",
+             command=lambda: process_adaptive(),
+             font=('Segoe UI', 9, 'bold'), bg='#27ae60', fg='white',
+             relief='flat', cursor='hand2', padx=12, pady=8).grid(row=0, column=2)
+
+    tk.Button(tile_frame, text="Xem anh goc",
+             command=lambda: app.show_image(app.original_image),
+             font=('Segoe UI', 9), bg='#3498db', fg='white',
+             relief='flat', cursor='hand2', padx=12, pady=8).grid(row=0, column=3, padx=(10, 0))
+
+    preview_frame = tk.Frame(info_frame, bg='white')
+    preview_frame.pack(fill='x')
+
+    img_frame = tk.Frame(preview_frame, bg='white')
+    img_frame.pack(fill='x')
+
+    hist_frame = tk.Frame(preview_frame, bg='white')
+    hist_frame.pack(fill='x', pady=(10, 0))
+
+    canvases = {}
+    hist_canvases = {}
+    labels = [("Goc", "#2980b9"), ("Toan cuc", "#27ae60"), ("Adaptive", "#e67e22")]
+    for idx, (name, _) in enumerate(labels):
+        wrapper = tk.Frame(img_frame, bg='white')
+        wrapper.grid(row=0, column=idx, padx=5)
+        tk.Label(wrapper, text=name, font=('Segoe UI', 9, 'bold'),
+                bg='white', fg='#2c3e50').pack(anchor='w')
+        c = tk.Canvas(wrapper, width=230, height=150, bg='#ecf0f1',
+                     highlightthickness=1, highlightbackground='#bdc3c7')
+        c.pack()
+        canvases[name] = c
+
+        hist_wrap = tk.Frame(hist_frame, bg='white')
+        hist_wrap.grid(row=0, column=idx, padx=5)
+        tk.Label(hist_wrap, text=f"Histogram {name}", font=('Segoe UI', 9),
+                bg='white', fg='#2c3e50').pack(anchor='w')
+        hc = tk.Canvas(hist_wrap, width=230, height=140, bg='white',
+                      highlightthickness=1, highlightbackground='#bdc3c7')
+        hc.pack()
+        hist_canvases[name] = hc
+
+    analysis_text = tk.Text(info_frame, font=('Segoe UI', 9),
+                           bg='#f8f9fa', fg='#2c3e50',
+                           relief='flat', height=5, wrap='word')
+    analysis_text.pack(fill='x', pady=(10, 0))
+    analysis_text.insert("1.0", "Nhan 'Thuc hien' de so sanh.")
+    analysis_text.config(state='disabled')
+
+    def compute_histogram(pil_img):
+        if pil_img is None:
+            return None
+        arr = np.array(pil_img.convert("L"))
+        hist, _ = np.histogram(arr.flatten(), bins=256, range=[0, 256])
+        return hist
+
+    def draw_hist(canvas, hist, color="#3498db"):
+        canvas.delete("all")
+        if hist is None:
+            canvas.create_text(115, 70, text="Khong co du lieu",
+                             font=('Segoe UI', 9), fill='#7f8c8d')
+            return
+        max_val = np.max(hist) if len(hist) else 0
+        if max_val == 0:
+            return
+        w = 230
+        h = 140
+        margin = 20
+        chart_w = w - margin * 2
+        chart_h = h - margin * 2
+        for i in range(256):
+            if hist[i] == 0:
+                continue
+            x0 = margin + (i / 256.0) * chart_w
+            x1 = margin + ((i + 1) / 256.0) * chart_w
+            bar_h = (hist[i] / max_val) * chart_h
+            y0 = h - margin
+            y1 = y0 - bar_h
+            canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline=color)
+
+    def show_image_on_canvas(canvas, pil_img):
+        canvas.delete("all")
+        if pil_img is None:
+            canvas.create_text(115, 75, text="Khong co anh",
+                             font=('Segoe UI', 9), fill='#7f8c8d')
+            return
+        img = pil_img.convert("RGB").copy()
+        img.thumbnail((220, 140), Image.LANCZOS)
+        photo = ImageTk.PhotoImage(img)
+        state["photos"].append(photo)
+        canvas.create_image(115, 75, image=photo)
+
+    def refresh_previews():
+        state["photos"].clear()
+        show_image_on_canvas(canvases["Goc"], app.original_image)
+        draw_hist(hist_canvases["Goc"], compute_histogram(app.original_image), labels[0][1])
+
+        show_image_on_canvas(canvases["Toan cuc"], state["global_img"])
+        draw_hist(hist_canvases["Toan cuc"], compute_histogram(state["global_img"]) if state["global_img"] else None, labels[1][1])
+
+        show_image_on_canvas(canvases["Adaptive"], state["local_img"])
+        draw_hist(hist_canvases["Adaptive"], compute_histogram(state["local_img"]) if state["local_img"] else None, labels[2][1])
+
+    def process_adaptive():
+        try:
+            if histogram_equalization.is_color_image(app.original_image):
+                r_matrix, g_matrix, b_matrix = histogram_equalization.get_color_channels(app.original_image)
+                total_pixels = r_matrix.size
+
+                def eq_channel(mat):
+                    nk = histogram_equalization.step1_count_pixels(mat)
+                    cdf = histogram_equalization.step2_calculate_cdf(nk, total_pixels)
+                    sk = histogram_equalization.step3_calculate_output_levels(cdf)
+                    histogram_equalization.step4_count_output_pixels(nk, sk)
+                    return sk
+
+                r_sk = eq_channel(r_matrix)
+                g_sk = eq_channel(g_matrix)
+                b_sk = eq_channel(b_matrix)
+                global_img, _, _, _ = histogram_equalization.step5_create_equalized_color_image(
+                    r_matrix, g_matrix, b_matrix, r_sk, g_sk, b_sk
+                )
+            else:
+                gray_matrix = histogram_equalization.get_gray_matrix(app.original_image)
+                total_pixels = gray_matrix.size
+                nk = histogram_equalization.step1_count_pixels(gray_matrix)
+                cdf = histogram_equalization.step2_calculate_cdf(nk, total_pixels)
+                sk = histogram_equalization.step3_calculate_output_levels(cdf)
+                histogram_equalization.step4_count_output_pixels(nk, sk)
+                global_img = histogram_equalization.step5_create_equalized_image(gray_matrix, sk)
+
+            local_img = adaptive_histogram.adaptive_histogram_equalization(
+                app.original_image, tile_size=tile_var.get()
+            )
+            if local_img.mode != "RGBA":
+                local_img = local_img.convert("RGBA")
+
+            state["global_img"] = global_img if global_img.mode == "RGBA" else global_img.convert("RGBA")
+            state["local_img"] = local_img
+            app.processed_image = local_img
+            app.show_image(local_img)
+            refresh_previews()
+
+            analysis_text.config(state='normal')
+            analysis_text.delete("1.0", tk.END)
+            analysis_text.insert(
+                "1.0",
+                "Can bang toan cuc trai histogram rong nhung co the lam mat chi tiet vung. "
+                f"Adaptive (tile {tile_var.get()} px) giup tang chi tiet o moi vung sang/toi."
+            )
+            analysis_text.config(state='disabled')
+        except Exception as e:
+            messagebox.showerror("Loi", f"Khong can bang duoc:\n{e}")
+
+    refresh_previews()
+    app.show_image(app.original_image)
