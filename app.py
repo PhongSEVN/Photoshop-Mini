@@ -9,7 +9,8 @@ from ui.handlers import (
     create_red_channel_ui, create_alpha_ui, create_metrics_ui,
     create_transform_ui, create_contrast_stretch_ui,
     create_histogram_equalization_ui, create_histogram_matching_ui,
-    create_adaptive_histogram_ui
+    create_adaptive_histogram_ui, create_convolution_ui,
+    create_average_filter_ui, create_median_filter_ui
 )
 from utils.image_utils import resize_for_display, check_alpha_channel
 
@@ -113,7 +114,9 @@ class ImageApp(tk.Tk):
             "Cân bằng histogram tiêu chuẩn",
             "Histogram Matching",
             "Cân bằng Histogram cục bộ",
-
+            "Demo Nhân chập (Convolution)",
+            "Lọc trung bình (Blur/Denoise)",
+            "Lọc trung vị (Median)"
         ]
         for f in funcs:
             self.func_listbox.insert(tk.END, f)
@@ -240,7 +243,10 @@ class ImageApp(tk.Tk):
             create_contrast_stretch_ui,
             create_histogram_equalization_ui,
             create_histogram_matching_ui,
-            create_adaptive_histogram_ui
+            create_adaptive_histogram_ui,
+            create_convolution_ui,
+            create_average_filter_ui,
+            create_median_filter_ui
         ]
         
         if 0 <= idx < len(handlers):

@@ -6,7 +6,8 @@ import numpy as np
 import os
 
 from features import grayscale, binary, red_channel, alpha, metrics, transform, contrast
-from features import histogram_equalization, histogram_matching, adaptive_histogram
+from features import histogram_equalization, histogram_matching, adaptive_histogram, convolution, noise
+from utils.image_utils import resize_for_display
 
 
 def create_save_ui(app, info_frame):
@@ -1303,3 +1304,271 @@ def create_adaptive_histogram_ui(app, info_frame):
 
     refresh_previews()
     app.show_image(app.original_image)
+
+
+def create_convolution_ui(app, info_frame):
+    title = tk.Label(info_frame, text="Demo Nhân chập (Convolution)",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+
+    desc = tk.Label(info_frame, 
+                   text="Demo nhân chập ma trận 5x5 với mask 3x3",
+                   font=('Segoe UI', 9),
+                   bg='white', fg='#7f8c8d')
+    desc.pack(anchor='w', pady=(0, 15))
+
+    btn_frame = tk.Frame(info_frame, bg='white')
+    btn_frame.pack(anchor='w')
+
+    result_frame = tk.Frame(info_frame, bg='white')
+    result_frame.pack(fill='both', expand=True, pady=10)
+
+    def run_demo():
+        for widget in result_frame.winfo_children():
+            widget.destroy()
+
+        I, K = convolution.get_sample_matrices()
+        I_conv = convolution.convolve_step(I, K)
+        val, expl = convolution.manual_verification(I, K)
+
+        def show_matrix(parent, matrix, title):
+            frame = tk.Frame(parent, bg='white', padx=5)
+            frame.pack(side='left', padx=5, anchor='n')
+            tk.Label(frame, text=title, font=('Segoe UI', 9, 'bold'), bg='white').pack()
+            
+            text = ""
+            for row in matrix:
+                text += " ".join(f"{x:3}" for x in row) + "\n"
+                
+            lbl = tk.Label(frame, text=text, font=('Consolas', 10), bg='#ecf0f1', justify='left', padx=5, pady=5)
+            lbl.pack(pady=5)
+
+        matrices_frame = tk.Frame(result_frame, bg='white')
+        matrices_frame.pack(fill='x', pady=10)
+
+        show_matrix(matrices_frame, I, "Ma trận ảnh I (5x5)")
+        show_matrix(matrices_frame, K, "Mask K (3x3)")
+        show_matrix(matrices_frame, I_conv, "Kết quả I_conv")
+
+        tk.Label(result_frame, text="Kiểm tra thủ công tại I(3,3) - (index 2,2):", 
+                font=('Segoe UI', 9, 'bold'), bg='white', fg='#2c3e50').pack(anchor='w', pady=(10, 5))
+        
+        tk.Label(result_frame, text=expl, font=('Consolas', 9), bg='#f9f9f9', fg='#27ae60', padx=10, pady=10, justify='left').pack(anchor='w', fill='x')
+
+    run_btn = tk.Button(btn_frame, text="Chạy Demo", 
+                       command=run_demo,
+                       font=('Segoe UI', 9, 'bold'), bg='#3498db', fg='white',
+                       relief='flat', cursor='hand2', padx=15, pady=8)
+    run_btn.pack(side='left')
+
+
+def create_average_filter_ui(app, info_frame):
+    title = tk.Label(info_frame, text="Lọc trung bình (Blur/Denoise)",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+    
+    if app.original_image is None:
+        tk.Label(info_frame, text="Vui lòng tải ảnh lên trước.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+        return
+
+    state = {'noisy': None, 'filtered_3': None, 'filtered_5': None}
+
+    btn_frame = tk.Frame(info_frame, bg='white')
+    btn_frame.pack(anchor='w', pady=(0, 15))
+
+    def show_comparison():
+        for widget in display_frame.winfo_children():
+            widget.destroy()
+
+        imgs = [
+            ("Ảnh gốc", app.original_image),
+            ("Ảnh nhiễu (Muối tiêu)", state['noisy']),
+            (f"Lọc trung bình {state.get('last_filter', '')}", app.processed_image)
+        ]
+
+        for name, img in imgs:
+            if img:
+                wrapper = tk.Frame(display_frame, bg='white')
+                wrapper.pack(side='left', padx=5, expand=True)
+                
+                tk.Label(wrapper, text=name, font=('Segoe UI', 9, 'bold'), bg='white').pack()
+                
+                c = tk.Canvas(wrapper, width=200, height=200, bg='#ecf0f1', highlightthickness=1)
+                c.pack()
+                
+                # Resize trực tiếp vì canvas chưa có kích thước thật
+                disp = img.copy()
+                disp.thumbnail((200, 200), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(disp)
+                c.create_image(100, 100, image=photo, anchor='center')
+                c.image = photo
+
+    def add_noise():
+        state['noisy'] = noise.add_salt_and_pepper_noise(app.original_image)
+        app.processed_image = state['noisy']
+        state['last_filter'] = '(Chưa lọc)'
+        show_comparison()
+        
+    def filter_3x3():
+        if state['noisy'] is None:
+            messagebox.showwarning("Chưa có nhiễu", "Vui lòng thêm nhiễu trước.")
+            return
+        res = noise.apply_average_filter(state['noisy'], 3)
+        app.processed_image = res
+        state['last_filter'] = '3x3'
+        show_comparison()
+        update_analysis(3)
+
+    def filter_5x5():
+        if state['noisy'] is None:
+            messagebox.showwarning("Chưa có nhiễu", "Vui lòng thêm nhiễu trước.")
+            return
+        res = noise.apply_average_filter(state['noisy'], 5)
+        app.processed_image = res
+        state['last_filter'] = '5x5'
+        show_comparison()
+        update_analysis(5)
+
+    def update_analysis(size):
+        text_widget.config(state='normal')
+        text_widget.delete('1.0', tk.END)
+        if size == 3:
+            msg = "Bộ lọc 3x3: Khử được một phần nhiễu muối tiêu nhưng vẫn còn sót lại. Ảnh bị mờ đi một chút so với ảnh gốc."
+        else:
+            msg = "Bộ lọc 5x5: Khử nhiễu tốt hơn 3x3 (ảnh `mịn` hơn) nhưng làm ảnh bị mờ (blur) rõ rệt hơn. Các chi tiết cạnh bị nhòe đi nhiều."
+        text_widget.insert('1.0', msg)
+        text_widget.config(state='disabled')
+
+    tk.Button(btn_frame, text="1. Thêm nhiễu", command=add_noise,
+             font=('Segoe UI', 9), bg='#e74c3c', fg='white', relief='flat', padx=10).pack(side='left', padx=2)
+             
+    tk.Button(btn_frame, text="2. Lọc 3x3", command=filter_3x3,
+             font=('Segoe UI', 9), bg='#3498db', fg='white', relief='flat', padx=10).pack(side='left', padx=2)
+             
+    tk.Button(btn_frame, text="3. Lọc 5x5", command=filter_5x5,
+             font=('Segoe UI', 9), bg='#2980b9', fg='white', relief='flat', padx=10).pack(side='left', padx=2)
+
+    display_frame = tk.Frame(info_frame, bg='white')
+    display_frame.pack(fill='x', pady=10)
+
+    tk.Label(info_frame, text="Phân tích hiệu quả:", font=('Segoe UI', 10, 'bold'), bg='white').pack(anchor='w')
+    
+    text_widget = tk.Text(info_frame, height=4, font=('Segoe UI', 9), bg='#f8f9fa', relief='flat', padx=5, pady=5)
+    text_widget.pack(fill='x', pady=5)
+    text_widget.insert('1.0', "Hãy thêm nhiễu và thử lọc để xem kết quả.")
+    text_widget.config(state='disabled')
+
+
+def create_median_filter_ui(app, info_frame):
+    title = tk.Label(info_frame, text="Lọc trung vị (Median)",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+    
+    if app.original_image is None:
+        tk.Label(info_frame, text="Vui lòng tải ảnh lên trước.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+        return
+
+    state = {'noisy': None}
+
+    btn_frame = tk.Frame(info_frame, bg='white')
+    btn_frame.pack(anchor='w', pady=(0, 15))
+
+    def show_comparison(avg_img, median_img, size):
+        for widget in display_frame.winfo_children():
+            widget.destroy()
+
+        imgs = [
+            (f"Ảnh nhiễu", state['noisy']),
+            (f"Trung bình {size}x{size}", avg_img),
+            (f"Trung vị {size}x{size}", median_img)
+        ]
+
+        for name, img in imgs:
+            if img:
+                wrapper = tk.Frame(display_frame, bg='white')
+                wrapper.pack(side='left', padx=5, expand=True)
+                
+                tk.Label(wrapper, text=name, font=('Segoe UI', 9, 'bold'), bg='white').pack()
+                
+                c = tk.Canvas(wrapper, width=200, height=200, bg='#ecf0f1', highlightthickness=1)
+                c.pack()
+                
+                # Use fixed size to avoid display issues
+                disp = img.copy()
+                disp.thumbnail((200, 200), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(disp)
+                c.create_image(100, 100, image=photo, anchor='center')
+                c.image = photo
+
+    def add_noise():
+        state['noisy'] = noise.add_salt_and_pepper_noise(app.original_image)
+        app.processed_image = state['noisy']
+        
+        # Clear display
+        for widget in display_frame.winfo_children():
+            widget.destroy()
+            
+        # Show noisy image only
+        wrapper = tk.Frame(display_frame, bg='white')
+        wrapper.pack(side='left', padx=5, expand=True)
+        tk.Label(wrapper, text="Ảnh nhiễu", font=('Segoe UI', 9, 'bold'), bg='white').pack()
+        c = tk.Canvas(wrapper, width=200, height=200, bg='#ecf0f1', highlightthickness=1)
+        c.pack()
+        disp = state['noisy'].copy()
+        disp.thumbnail((200, 200), Image.LANCZOS)
+        photo = ImageTk.PhotoImage(disp)
+        c.create_image(100, 100, image=photo, anchor='center')
+        c.image = photo
+        
+        update_analysis(0)
+
+    def run_compare(size):
+        if state['noisy'] is None:
+            messagebox.showwarning("Chưa có nhiễu", "Vui lòng thêm nhiễu trước.")
+            return
+            
+        # Run both filters
+        avg_res = noise.apply_average_filter(state['noisy'], size)
+        median_res = noise.apply_median_filter(state['noisy'], size)
+        
+        # Save median as processed for main display if needed, but here we show comparison
+        app.processed_image = median_res
+        
+        show_comparison(avg_res, median_res, size)
+        update_analysis(size)
+
+    def update_analysis(size):
+        text_widget.config(state='normal')
+        text_widget.delete('1.0', tk.END)
+        if size == 0:
+             msg = "Hãy thêm nhiễu trước."
+        elif size == 3:
+            msg = "So sánh 3x3:\n- Trung bình: Làm mờ ảnh, nhiễu vẫn còn (dạng đốm mờ).\n- Trung vị: Khử sạch nhiễu muối tiêu, giữ lại cạnh sắc nét hơn hẳn. Trung vị tốt hơn vì nó loại bỏ giá trị cực đoan (0/255) thay vì chia đều chúng."
+        else:
+            msg = "So sánh 5x5:\n- Trung bình: Ảnh rất mờ, mất chi tiết.\n- Trung vị: Vẫn khử nhiễu tốt và giữ cạnh, nhưng các chi tiết nhỏ có thể bị mất hoặc biến dạng (bệt màu) nếu kích thước mask quá lớn."
+        text_widget.insert('1.0', msg)
+        text_widget.config(state='disabled')
+
+    tk.Button(btn_frame, text="1. Thêm nhiễu", command=add_noise,
+             font=('Segoe UI', 9), bg='#e74c3c', fg='white', relief='flat', padx=10).pack(side='left', padx=2)
+             
+    tk.Button(btn_frame, text="So sánh 3x3", command=lambda: run_compare(3),
+             font=('Segoe UI', 9), bg='#3498db', fg='white', relief='flat', padx=10).pack(side='left', padx=2)
+             
+    tk.Button(btn_frame, text="So sánh 5x5", command=lambda: run_compare(5),
+             font=('Segoe UI', 9), bg='#2980b9', fg='white', relief='flat', padx=10).pack(side='left', padx=2)
+
+    display_frame = tk.Frame(info_frame, bg='white')
+    display_frame.pack(fill='x', pady=10)
+
+    tk.Label(info_frame, text="Phân tích hiệu quả:", font=('Segoe UI', 10, 'bold'), bg='white').pack(anchor='w')
+    
+    text_widget = tk.Text(info_frame, height=6, font=('Segoe UI', 9), bg='#f8f9fa', relief='flat', padx=5, pady=5)
+    text_widget.pack(fill='x', pady=5)
+    text_widget.insert('1.0', "Hãy thêm nhiễu và thử lọc để so sánh.")
+    text_widget.config(state='disabled')
