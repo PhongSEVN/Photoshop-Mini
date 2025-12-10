@@ -32,6 +32,35 @@ def convolve_step(image, kernel):
             
     return output
 
+def my_convolution(image, kernel):
+    # 1. Lay kich thuoc anh va kernel
+    H, W = image.shape
+    k = kernel.shape[0] # Gia su kernel vuong k x k
+    
+    # 2. Tao anh dem (padding) voi so 0
+    pad = k // 2
+    padded_image = np.pad(image, ((pad, pad), (pad, pad)), mode='constant', constant_values=0)
+    
+    # Tao anh ket qua
+    result = np.zeros((H, W), dtype=image.dtype)
+    
+    # 3. Hai vong lap for de truot kernel
+    for i in range(H):
+        for j in range(W):
+            # 4. Lay vung anh tuong ung va nhan tich chap
+            # Vung anh se duoc lay tu padded_image
+            # a[i, j] tuong ung voi padded_image[i+pad, j+pad]
+            # Vung lan can k x k se la:
+            region = padded_image[i:i+k, j:j+k]
+            
+            # Tinh tong sau khi nhan element-wise
+            val = np.sum(region * kernel)
+            
+            result[i, j] = val
+            
+    # 5. Tra ve ket qua
+    return result
+
 def manual_verification(image, kernel, center_x=2, center_y=2):
     h, w = kernel.shape
     pad_h = h // 2

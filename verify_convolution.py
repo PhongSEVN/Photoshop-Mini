@@ -29,7 +29,7 @@ def verify():
         return
 
     # 2. Run convolution
-    I_conv = convolution.convolve_step(I, K)
+    I_conv = convolution.my_convolution(I, K)
     print(f"I_conv shape: {I_conv.shape}")
     
     if I_conv.shape != (5, 5):

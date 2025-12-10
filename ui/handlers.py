@@ -1356,11 +1356,256 @@ def create_convolution_ui(app, info_frame):
         
         tk.Label(result_frame, text=expl, font=('Consolas', 9), bg='#f9f9f9', fg='#27ae60', padx=10, pady=10, justify='left').pack(anchor='w', fill='x')
 
-    run_btn = tk.Button(btn_frame, text="Chạy Demo", 
-                       command=run_demo,
-                       font=('Segoe UI', 9, 'bold'), bg='#3498db', fg='white',
+
+def create_my_convolution_ui(app, info_frame):
+    """UI cho chức năng My Convolution Demo (New)"""
+    title = tk.Label(info_frame, text="Demo Nhân chập (My Convolution)",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+
+    if app.original_image is None:
+        tk.Label(info_frame, text="Vui lòng tải ảnh lên trước để chạy demo.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+        return
+
+    desc = tk.Label(info_frame, 
+                   text="Áp dụng my_convolution (chạy 2 vòng lặp) với kernel làm nét (Sharpen) trên ảnh tải lên.\nLưu ý: Có thể mất vài giây với ảnh lớn.",
+                   font=('Segoe UI', 9),
+                   bg='white', fg='#7f8c8d', justify='left')
+    desc.pack(anchor='w', pady=(0, 15))
+
+    btn_frame = tk.Frame(info_frame, bg='white')
+    btn_frame.pack(anchor='w')
+
+    def run_on_image():
+        # Convert to grayscale for simplicity
+        gray = app.original_image.convert("L")
+        img_arr = np.array(gray)
+        
+        # Sharpen kernel
+        kernel = np.array([
+            [0, -1, 0],
+            [-1, 5, -1],
+            [0, -1, 0]
+        ])
+        
+        # Run convolution
+        try:
+             app.config(cursor="wait")
+             app.update()
+             
+             result_arr = convolution.my_convolution(img_arr, kernel)
+             
+             # Clip result to 0-255
+             result_arr = np.clip(result_arr, 0, 255).astype(np.uint8)
+             result_img = Image.fromarray(result_arr)
+             
+             app.processed_image = result_img
+             app.show_image(result_img)
+             
+             messagebox.showinfo("Hoàn tất", "Đã xử lý xong!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Lỗi xử lý: {e}")
+        finally:
+            app.config(cursor="")
+
+    run_btn = tk.Button(btn_frame, text="Chạy nhân tích chập", 
+                       command=run_on_image,
+                       font=('Segoe UI', 9, 'bold'), bg='#9b59b6', fg='white',
                        relief='flat', cursor='hand2', padx=15, pady=8)
-    run_btn.pack(side='left')
+    run_btn.pack(side='left', padx=(0, 10))
+    
+    revert_btn = tk.Button(btn_frame, text="Quay về ảnh gốc",
+                         command=lambda: app.show_image(app.original_image),
+                         font=('Segoe UI', 9), bg='#95a5a6', fg='white',
+                         relief='flat', cursor='hand2', padx=15, pady=8)
+    revert_btn.pack(side='left')
+
+
+def create_edge_detection_ui(app, info_frame):
+    """UI cho chức năng Dò biên (Edge Detection)"""
+    title = tk.Label(info_frame, text="Dò biên (Edge Detection)",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+    
+    if app.original_image is None:
+        tk.Label(info_frame, text="Vui lòng tải ảnh lên trước.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+        return
+
+    # Use clean imports inside function to avoid circular or early import issues
+    from features import edge_detection
+    import numpy as np
+    
+    nb = ttk.Notebook(info_frame)
+    nb.pack(fill='both', expand=True, pady=10)
+    
+    # Tab 1: Sobel vs Prewitt
+    f1 = tk.Frame(nb, bg='white', padx=10, pady=10)
+    nb.add(f1, text="Sobel & Prewitt")
+    
+    desc1 = tk.Label(f1, text="So sánh Gradient bật 1: Sobel vs Prewitt", 
+                    font=('Segoe UI', 9, 'italic'), bg='white', fg='#7f8c8d')
+    desc1.pack(anchor='w', pady=(0, 10))
+    
+    # Slider
+    thresh_frame1 = tk.Frame(f1, bg='white')
+    thresh_frame1.pack(anchor='w', pady=(0, 10))
+    tk.Label(thresh_frame1, text="Ngưỡng (Threshold):", bg='white').pack(side='left')
+    thresh_var1 = tk.IntVar(value=40)
+    tk.Scale(thresh_frame1, variable=thresh_var1, from_=0, to=255, orient='horizontal', bg='white', length=200).pack(side='left', padx=10)
+
+    # Label phân tích cho Sobel/Prewitt (ẩn ban đầu)
+    analysis_lbl1 = tk.Label(f1, text="", font=('Segoe UI', 9), 
+                            bg='#ecf0f1', fg='#2c3e50', justify='left', wraplength=350, padx=10, pady=10)
+    
+    def run_sobel_prewitt():
+        try:
+             app.config(cursor="wait")
+             app.update()
+             
+             gray = app.original_image.convert("L")
+             img_arr = np.array(gray)
+             th = thresh_var1.get()
+             
+             # Calculate
+             sobel_res = edge_detection.apply_sobel(img_arr, threshold=th)
+             prewitt_res = edge_detection.apply_prewitt(img_arr, threshold=th)
+             
+             # Convert to Images
+             sobel_img = Image.fromarray(sobel_res)
+             prewitt_img = Image.fromarray(prewitt_res)
+             
+             # Save one to processed for saving
+             app.processed_image = sobel_img # Default save sobel
+             
+             # Display comparision
+             imgs = [
+                 ("Ảnh gốc", app.original_image.convert("L")),
+                 ("Sobel", sobel_img),
+                 ("Prewitt", prewitt_img)
+             ]
+             show_comparison(imgs)
+             
+             # Analysis text
+             analysis = f"""PHÂN TÍCH (Ngưỡng={th}):
+- Sobel: Kernel có trọng số 2 ở giữa giúp làm mịn và giảm nhiễu tốt hơn. Ảnh biên nhìn mượt hơn.
+- Prewitt: Trọng số đều nhau, rất nhạy với nhiễu. Đường biên có thể sắc mảnh nhưng dễ bị đứt đoạn bởi nhiễu."""
+             analysis_lbl1.config(text=analysis)
+             analysis_lbl1.pack(anchor='w', fill='x', pady=10)
+             
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"{e}")
+        finally:
+             app.config(cursor="")
+             
+    btn1 = tk.Button(f1, text="Chạy so sánh", command=run_sobel_prewitt,
+                    font=('Segoe UI', 9, 'bold'), bg='#2980b9', fg='white',
+                    relief='flat', padx=15, pady=5)
+    btn1.pack(anchor='w')
+
+
+    # Tab 2: Robert vs Kirsch
+    f2 = tk.Frame(nb, bg='white', padx=10, pady=10)
+    nb.add(f2, text="Robert & Kirsch")
+    
+    desc2 = tk.Label(f2, text="So sánh: Robert (2x2) vs Kirsch (8 hướng)", 
+                    font=('Segoe UI', 9, 'italic'), bg='white', fg='#7f8c8d')
+    desc2.pack(anchor='w', pady=(0, 10))
+
+    # Slider
+    thresh_frame2 = tk.Frame(f2, bg='white')
+    thresh_frame2.pack(anchor='w', pady=(0, 10))
+    tk.Label(thresh_frame2, text="Ngưỡng (Threshold):", bg='white').pack(side='left')
+    thresh_var2 = tk.IntVar(value=40)
+    tk.Scale(thresh_frame2, variable=thresh_var2, from_=0, to=255, orient='horizontal', bg='white', length=200).pack(side='left', padx=10)
+    
+    # Label phân tích cho Robert/Kirsch
+    analysis_lbl2 = tk.Label(f2, text="", font=('Segoe UI', 9), 
+                            bg='#ecf0f1', fg='#2c3e50', justify='left', wraplength=350, padx=10, pady=10)
+
+    def run_robert_kirsch():
+        try:
+             app.config(cursor="wait")
+             app.update()
+             
+             gray = app.original_image.convert("L")
+             img_arr = np.array(gray)
+             th = thresh_var2.get()
+             
+             # Calculate
+             robert_res = edge_detection.apply_roberts(img_arr, threshold=th)
+             kirsch_res = edge_detection.apply_kirsch(img_arr, threshold=th)
+             
+             # Convert to Images
+             robert_img = Image.fromarray(robert_res)
+             kirsch_img = Image.fromarray(kirsch_res)
+             
+             app.processed_image = kirsch_img
+             
+             # Display comparision
+             imgs = [
+                 ("Ảnh gốc", app.original_image.convert("L")),
+                 ("Robert (2x2)", robert_img),
+                 ("Kirsch (8 hướng)", kirsch_img)
+             ]
+             show_comparison(imgs)
+             
+             # Analysis text
+             analysis = f"""PHÂN TÍCH (Ngưỡng={th}):
+- Robert: Kernel 2x2 nhỏ, tính nhanh nhưng RẤT nhạy nhiễu muối tiêu.
+- Kirsch: Dò 8 hướng lấy max. Biên cực kỳ rõ và ít nhiễu hơn Robert. Tốt nhất trong các phương pháp trên."""
+             analysis_lbl2.config(text=analysis)
+             analysis_lbl2.pack(anchor='w', fill='x', pady=10)
+             
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"{e}")
+        finally:
+             app.config(cursor="")
+
+    btn2 = tk.Button(f2, text="Chạy so sánh", command=run_robert_kirsch,
+                    font=('Segoe UI', 9, 'bold'), bg='#8e44ad', fg='white',
+                    relief='flat', padx=15, pady=5)
+    btn2.pack(anchor='w')
+
+    def show_comparison(image_list):
+        # Helper to show images horizontally
+        try:
+             app.text_frame.pack_forget()
+        except: pass
+        app.canvas.master.pack(fill='both', expand=True)
+        app.canvas.delete("all")
+        
+        W = app.canvas.winfo_width() or 800
+        H = app.canvas.winfo_height() or 600
+        
+        n_imgs = len(image_list)
+        spacing = 10
+        img_w = (W - (n_imgs+1) * spacing) // n_imgs
+        img_h = H - 50 
+        
+        current_x = spacing
+        
+        app.comparison_photos = [] 
+        
+        for title, pil_img in image_list:
+            w, h = pil_img.size
+            ratio = min(img_w/w, img_h/h)
+            new_size = (int(w*ratio), int(h*ratio))
+            resized = pil_img.resize(new_size, Image.LANCZOS)
+            
+            p = ImageTk.PhotoImage(resized)
+            app.comparison_photos.append(p)
+            
+            y_pos = H // 2
+            x_pos = current_x + img_w // 2
+            
+            app.canvas.create_image(x_pos, y_pos, image=p, anchor="center")
+            app.canvas.create_text(x_pos, y_pos + new_size[1]//2 + 15, text=title, font=('Segoe UI', 10, 'bold'), fill='#2c3e50')
+            
+            current_x += img_w + spacing
 
 
 def create_average_filter_ui(app, info_frame):
