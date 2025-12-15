@@ -1817,3 +1817,272 @@ def create_median_filter_ui(app, info_frame):
     text_widget.pack(fill='x', pady=5)
     text_widget.insert('1.0', "Hãy thêm nhiễu và thử lọc để so sánh.")
     text_widget.config(state='disabled')
+
+
+def create_laplace_features_ui(app, info_frame):
+    title = tk.Label(info_frame, text="Laplace & LoG & Sharpening",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+    
+    if app.original_image is None:
+        tk.Label(info_frame, text="Vui lòng tải ảnh lên trước.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+        return
+
+    from features import laplace_processing, noise
+    import numpy as np
+    import math
+    
+    nb = ttk.Notebook(info_frame)
+    nb.pack(fill='both', expand=True, pady=10)
+    
+    # helper for showing images on main canvas
+    def show_on_canvas(image_list):
+        try:
+             app.text_frame.pack_forget()
+        except: pass
+        app.canvas.master.pack(fill='both', expand=True)
+        app.canvas.delete("all")
+        
+        W = app.canvas.winfo_width() or 800
+        H = app.canvas.winfo_height() or 600
+        
+        n_imgs = len(image_list)
+        # Dynamic spacing
+        spacing = 20
+        # Check if we have 2 rows (more than 3 images?)
+        rows = 1
+        if n_imgs > 3:
+            rows = 2
+            
+        img_w = (W - (math.ceil(n_imgs/rows)+1) * spacing) // math.ceil(n_imgs/rows)
+        img_h = (H - 50) // rows
+        
+        app.comparison_photos = [] 
+        
+        cols = math.ceil(n_imgs / rows)
+        
+        for idx, (title, pil_img) in enumerate(image_list):
+            row = idx // cols
+            col = idx % cols
+            
+            # Resize
+            w, h = pil_img.size
+            ratio = min(img_w/w, img_h/h)
+            new_size = (int(w*ratio), int(h*ratio))
+            resized = pil_img.resize(new_size, Image.LANCZOS)
+            
+            p = ImageTk.PhotoImage(resized)
+            app.comparison_photos.append(p)
+            
+            # Position
+            x_pos = spacing + col * (img_w + spacing) + img_w // 2
+            y_pos = row * (img_h + 30) + img_h // 2 + 30 # offset top
+            
+            app.canvas.create_image(x_pos, y_pos, image=p, anchor="center")
+            app.canvas.create_text(x_pos, y_pos + new_size[1]//2 + 15, text=title, font=('Segoe UI', 10, 'bold'), fill='#2c3e50')
+
+    f1 = tk.Frame(nb, bg='white', padx=10, pady=10)
+    nb.add(f1, text="Laplace")
+    
+    tk.Label(f1, text="Dò biên Laplace (Đạo hàm bậc 2)", bg='white').pack(anchor='w')
+    
+    state_91 = {'noisy': None}
+    
+    def add_noise_91():
+        state_91['noisy'] = noise.add_salt_and_pepper_noise(app.original_image)
+        tk.messagebox.showinfo("Info", "Đã thêm nhiễu muối tiêu")
+        
+    def run_91():
+        try:
+            app.config(cursor="wait")
+            app.update()
+            
+            # Use noisy image if available, else original
+            if state_91['noisy']:
+                src_img = state_91['noisy']
+                src_label = "Ảnh nhiễu"
+            else:
+                src_img = app.original_image
+                src_label = "Ảnh gốc"
+            
+            gray = src_img.convert("L")
+            img_arr = np.array(gray)
+            
+            # Run 4N and 8N
+            res4n = laplace_processing.apply_laplace(img_arr, '4n_neg')
+            res8n = laplace_processing.apply_laplace(img_arr, '8n_neg')
+            
+            img4n = Image.fromarray(res4n)
+            img8n = Image.fromarray(res8n)
+            
+            app.processed_image = img8n
+            
+            imgs = [
+                (src_label, gray),
+                ("Laplace 4-neighbors", img4n),
+                ("Laplace 8-neighbors", img8n)
+            ]
+            show_on_canvas(imgs)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"{e}")
+        finally:
+            app.config(cursor="")
+            
+    tk.Button(f1, text="1. Thêm nhiễu (Tùy chọn)", command=add_noise_91, bg='#e74c3c', fg='white', relief='flat').pack(pady=5, anchor='w')
+    tk.Button(f1, text="2. Chạy Laplace", command=run_91, bg='#3498db', fg='white', relief='flat').pack(pady=5, anchor='w')
+    
+    f2 = tk.Frame(nb, bg='white', padx=10, pady=10)
+    nb.add(f2, text="LoG")
+    tk.Label(f2, text="Laplacian of Gaussian (Khử nhiễu -> Laplace)", bg='white', wraplength=200, justify='left').pack(anchor='w')
+    
+    state_92 = {'noisy': None}
+    
+    def add_noise_92():
+        state_92['noisy'] = noise.add_salt_and_pepper_noise(app.original_image)
+        tk.messagebox.showinfo("Info", "Đã xong thêm nhiễu muối tiêu")
+        
+    def run_92():
+        if state_92['noisy'] is None:
+            messagebox.showwarning("Warning", "Hãy thêm nhiễu trước")
+            return
+            
+        try:
+            app.config(cursor="wait")
+            app.update()
+            
+            gray = state_92['noisy'].convert("L")
+            img_arr = np.array(gray)
+            
+            # 1. Pure Laplace on Noisy
+            raw_res = laplace_processing.apply_laplace(img_arr, '4n_neg')
+            
+            # 2. LoG
+            log_res = laplace_processing.apply_log(img_arr, '4n_neg')
+            
+            img_raw = Image.fromarray(raw_res)
+            img_log = Image.fromarray(log_res)
+            
+            app.processed_image = img_log
+            
+            imgs = [
+                ("Ảnh nhiễu", gray),
+                ("Laplace (Ồn)", img_raw),
+                ("LoG (Mượt hơn)", img_log)
+            ]
+            show_on_canvas(imgs)
+            
+            analysis = "PHÂN TÍCH:\n- Laplace thuần: Cực kỳ nhạy cảm với nhiễu, các hạt nhiễu biến thành biên giả.\n- LoG: Gaussian làm mịn nhiễu trước, nên Laplace chỉ bắt được các biên thực tế. Ảnh sạch hơn nhiều."
+            analysis_lbl2.config(text=analysis)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"{e}")
+        finally:
+             app.config(cursor="")
+
+    tk.Button(f2, text="Thêm nhiễu", command=add_noise_92, bg='#e74c3c', fg='white', relief='flat').pack(pady=5, anchor='w')
+    tk.Button(f2, text="Chạy & So sánh", command=run_92, bg='#9b59b6', fg='white', relief='flat').pack(pady=5, anchor='w')
+    
+    analysis_lbl2 = tk.Label(f2, text="", bg='#ecf0f1', fg='#2c3e50', justify='left', wraplength=350, padx=5, pady=5)
+    analysis_lbl2.pack(fill='x', pady=10)
+
+    # --- 9.3 Smooth Sobel vs LoG ---
+    f3 = tk.Frame(nb, bg='white', padx=10, pady=10)
+    nb.add(f3, text="9.3 SoG vs LoG")
+    tk.Label(f3, text="Làm mịn + Sobel vs LoG", bg='white').pack(anchor='w')
+    
+    state_93 = {'noisy': None}
+    def add_noise_93():
+        state_93['noisy'] = noise.add_salt_and_pepper_noise(app.original_image)
+        tk.messagebox.showinfo("Info", "Đã xong thêm nhiễu muối tiêu")
+
+    def run_93():
+        if state_93['noisy'] is None:
+            messagebox.showwarning("Warning", "Hãy thêm nhiễu trước")
+            return
+            
+        try:
+            app.config(cursor="wait")
+            app.update()
+            
+            gray = state_93['noisy'].convert("L")
+            img_arr = np.array(gray)
+            
+            # 1. Smooth + Sobel
+            sog_res = laplace_processing.apply_smooth_sobel(img_arr)
+            
+            # 2. LoG
+            log_res = laplace_processing.apply_log(img_arr, '4n_neg')
+            
+            img_sog = Image.fromarray(sog_res)
+            img_log = Image.fromarray(log_res)
+            
+            app.processed_image = img_log
+            
+            imgs = [
+                ("Ảnh nhiễu", gray),
+                ("Smooth + Sobel", img_sog),
+                ("LoG", img_log)
+            ]
+            show_on_canvas(imgs)
+            
+            analysis = "PHÂN TÍCH:\n- Smooth+Sobel: Biên thường dày hơn (do Sobel + Gaussian lan tỏa).\n- LoG: Biên mảnh hơn (zero-crossing), xác định vị trí biên chính xác hơn nhưng đôi khi mất chi tiết nhỏ."
+            analysis_lbl3.config(text=analysis)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"{e}")
+        finally:
+             app.config(cursor="")
+
+    tk.Button(f3, text="Thêm nhiễu", command=add_noise_93, bg='#e74c3c', fg='white', relief='flat').pack(pady=5, anchor='w')
+    tk.Button(f3, text="Chạy & So sánh", command=run_93, bg='#27ae60', fg='white', relief='flat').pack(pady=5, anchor='w')
+    
+    analysis_lbl3 = tk.Label(f3, text="", bg='#ecf0f1', fg='#2c3e50', justify='left', wraplength=350, padx=5, pady=5)
+    analysis_lbl3.pack(fill='x', pady=10)
+
+    f4 = tk.Frame(nb, bg='white', padx=10, pady=10)
+    nb.add(f4, text="Sharpen")
+    tk.Label(f4, text="Làm nét ảnh bằng Laplace", bg='white').pack(anchor='w')
+    
+    def run_94():
+        try:
+            app.config(cursor="wait")
+            app.update()
+            
+            gray = app.original_image.convert("L")
+            img_arr = np.array(gray)
+            
+            # Sharpen using 4 kernels
+            # 1. 4N Neg (Center -4) -> Subtract
+            s1 = laplace_processing.apply_sharpening(img_arr, '4n_neg')
+            # 2. 8N Neg (Center -8) -> Subtract
+            s2 = laplace_processing.apply_sharpening(img_arr, '8n_neg')
+            # 3. 4N Pos (Center 4) -> Add
+            s3 = laplace_processing.apply_sharpening(img_arr, '4n_pos')
+            # 4. 8N Pos (Center 8) -> Add
+            s4 = laplace_processing.apply_sharpening(img_arr, '8n_pos')
+            
+            imgs = [
+                ("Gốc", gray),
+                ("4N (-4)", Image.fromarray(s1)),
+                ("8N (-8)", Image.fromarray(s2)),
+                ("4N (+4)", Image.fromarray(s3)),
+                ("8N (+8)", Image.fromarray(s4))
+            ]
+            
+            app.processed_image = Image.fromarray(s2)
+            show_on_canvas(imgs)
+            
+            analysis = "PHÂN TÍCH:\n- Cả 4 kernel đều làm nét ảnh.\n- Kết quả phép TRỪ với kernel tâm ÂM tương đương phép CỘNG với kernel tâm DƯƠNG.\n- Kernel 8-hàng xóm thường cho kết quả sắc nét hơn (mạnh hơn)."
+            analysis_lbl4.config(text=analysis)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"{e}")
+        finally:
+             app.config(cursor="")
+             
+    tk.Button(f4, text="Chạy làm nét", command=run_94, bg='#f39c12', fg='white', relief='flat').pack(pady=5, anchor='w')
+    analysis_lbl4 = tk.Label(f4, text="", bg='#ecf0f1', fg='#2c3e50', justify='left', wraplength=350, padx=5, pady=5)
+    analysis_lbl4.pack(fill='x', pady=10)

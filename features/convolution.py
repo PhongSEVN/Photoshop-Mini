@@ -41,8 +41,11 @@ def my_convolution(image, kernel):
     pad = k // 2
     padded_image = np.pad(image, ((pad, pad), (pad, pad)), mode='constant', constant_values=0)
     
-    # Tao anh ket qua
-    result = np.zeros((H, W), dtype=image.dtype)
+    dtype = image.dtype
+    if dtype == np.uint8:
+        dtype = float
+    
+    result = np.zeros((H, W), dtype=dtype)
     
     # 3. Hai vong lap for de truot kernel
     for i in range(H):
