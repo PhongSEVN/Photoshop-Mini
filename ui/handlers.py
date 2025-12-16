@@ -2086,3 +2086,336 @@ def create_laplace_features_ui(app, info_frame):
     tk.Button(f4, text="Chạy làm nét", command=run_94, bg='#f39c12', fg='white', relief='flat').pack(pady=5, anchor='w')
     analysis_lbl4 = tk.Label(f4, text="", bg='#ecf0f1', fg='#2c3e50', justify='left', wraplength=350, padx=5, pady=5)
     analysis_lbl4.pack(fill='x', pady=10)
+
+
+def create_fourier_ui(app, info_frame):
+    """UI cho chức năng Biến đổi Fourier (DFT)"""
+    title = tk.Label(info_frame, text="Biến đổi Fourier (DFT)",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+    
+    if app.original_image is None:
+        tk.Label(info_frame, text="Vui lòng tải ảnh lên trước.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+        return
+
+    from features import fourier
+    import numpy as np
+    
+    desc = tk.Label(info_frame, text="Demo DFT 2D và Dịch chuyển tâm phổ", 
+                   font=('Segoe UI', 9, 'italic'), bg='white', fg='#7f8c8d')
+    desc.pack(anchor='w', pady=(0, 15))
+    
+    # Analysis area
+    analysis_frame = tk.LabelFrame(info_frame, text="Phân tích & Kết quả", bg='white', font=('Segoe UI', 9, 'bold'))
+    analysis_frame.pack(fill='x', pady=10)
+    
+    analysis_lbl = tk.Label(analysis_frame, text="Nhấn Chạy để xem kết quả...", 
+                           bg='white', justify='left', wraplength=350, padx=5, pady=5, font=('Consolas', 9))
+    analysis_lbl.pack(fill='x')
+    
+    def run_fourier():
+        try:
+            app.config(cursor="wait")
+            app.update()
+            
+            # 1. Resize image to small size (e.g. 100x100) for performance
+            # because O(N^3) is slow for large images
+            target_size = (64, 64) # Keep it small for instant feedback, user can see logic
+            
+            img_resized = app.original_image.convert("L").resize(target_size, Image.LANCZOS)
+            img_arr = np.array(img_resized)
+            
+            # 2. DFT -> F
+            F = fourier.DFT_Fourier(img_arr)
+            
+            # 3. Shift -> Fs1
+            Fs1 = fourier.shifted(F)
+            
+            # 4. Multiply (-1)^(x+y) then DFT -> Fs2
+            Fs2 = fourier.F_shifted_transform(img_arr)
+            
+            # 5. Compare Fs1 and Fs2
+            # Should be close. Magnitude should be identical. Phase might differ by constant?
+            # From property: F(u - M/2, v - N/2) <-> f(x,y) * (-1)^(x+y)
+            # Actually shifted(F) moves zero freq (0,0) to (M/2, N/2)
+            # F_shifted_transform gives F'(u,v) where F'(0,0) corresponds to F(M/2, N/2) .. wait.
+            # Usually the property is: DFT[ f(x,y)(-1)^(x+y) ] = F(u - M/2, v - N/2)
+            # So Fs2(0,0) should be F(-M/2, -N/2) which is F(M/2, N/2) due to periodicity.
+            # And Fs1 center IS F(0,0).
+            # WAIT.
+            # shifted(F) moves (0,0) to CENTER.
+            # Fs2 is the DFT of (-1)^(x+y) * f. This spectrum naturally has the DC component at the corners?
+            # NO. DFT[ f(x,y)(-1)^(x+y) ] SHIFTS the spectrum so DC is at (M/2, N/2).
+            # Original DFT has DC at (0,0).
+            # shifted(F) swaps quadrants so DC (0,0) goes to (M/2, N/2).
+            # So Fs1 and Fs2 SHOULD BE EQUAL.
+            
+            diff = np.abs(Fs1 - Fs2)
+            is_equal = np.allclose(Fs1, Fs2, atol=1e-5)
+            max_diff = np.max(diff)
+            
+            # 6. Prepare Images for Display
+            
+            # Spectrum Images
+            spec_fs1 = fourier.compute_spectrum(Fs1)
+            spec_fs2 = fourier.compute_spectrum(Fs2)
+            
+            img_fs1 = Image.fromarray(spec_fs1)
+            img_fs2 = Image.fromarray(spec_fs2)
+            
+            app.processed_image = img_fs1
+            
+            # Custom display logic to show matrices and images
+            # We will show: Original, Spectrum Fs1, Spectrum Fs2
+            
+            # Helper to clear canvas and show
+            def show_result_images(imgs):
+                try: app.text_frame.pack_forget()
+                except: pass
+                app.canvas.master.pack(fill='both', expand=True)
+                app.canvas.delete("all")
+                
+                W = app.canvas.winfo_width()
+                H = app.canvas.winfo_height()
+                if W < 100: W = 800
+                if H < 100: H = 600
+                
+                count = len(imgs)
+                w_per_img = W // count
+                
+                app.comparison_photos = []
+                
+                for i, (label, p_img) in enumerate(imgs):
+                    # Resize to fit
+                    iw, ih = p_img.size
+                    ratio = min((w_per_img-20)/iw, (H-100)/ih)
+                    nw, nh = int(iw*ratio), int(ih*ratio)
+                    res = p_img.resize((nw, nh), Image.NEAREST)
+                    
+                    photo = ImageTk.PhotoImage(res)
+                    app.comparison_photos.append(photo)
+                    
+                    cx = i * w_per_img + w_per_img // 2
+                    cy = H // 2
+                    
+                    app.canvas.create_image(cx, cy, image=photo, anchor='center')
+                    app.canvas.create_text(cx, cy + nh//2 + 20, text=label, font=('Segoe UI', 10, 'bold'), fill='#2c3e50')
+
+            
+            show_result_images([
+                ("Ảnh gốc (Resized)", img_resized),
+                ("Spectrum Fs1 (Dịch bằng hàm)", img_fs1),
+                ("Spectrum Fs2 (Nhân (-1)^(x+y))", img_fs2)
+            ])
+            
+            # Helper to format matrix snippet
+            def format_center_matrix(M, size=3):
+                rows, cols = M.shape
+                cr, cc = rows // 2, cols // 2
+                start_r, start_c = cr - size//2, cc - size//2
+                
+                s = f"--- Ma trận (Tâm {size}x{size}) ---\n"
+                for i in range(size):
+                    r = start_r + i
+                    row_vals = []
+                    for j in range(size):
+                        c = start_c + j
+                        val = M[r,c]
+                        # Format nicely
+                        val_str = f"{val.real:.0f}{val.imag:+.0f}j"
+                        row_vals.append(f"{val_str:>10}")
+                    s += " ".join(row_vals) + "\n"
+                return s
+
+            # Update analysis text
+            res_text = f"KẾT QUẢ SO SÁNH (Ảnh nhỏ {target_size}):\n"
+            res_text += f"- Max Difference (Fs1 vs Fs2): {max_diff:.2e}\n"
+            res_text += f"- Kết luận: {'Hai ma trận GIỐNG NHAU' if is_equal else 'Hai ma trận KHÁC NHAU'}\n\n"
+            
+            res_text += "HIỂN THỊ GIÁ TRỊ MA TRẬN:\n"
+            res_text += "Fs1 (Dịch chuyển F):\n" + format_center_matrix(Fs1, 3) + "\n"
+            res_text += "Fs2 (Nhân (-1)^(x+y)):\n" + format_center_matrix(Fs2, 3) + "\n"
+            
+            res_text += "PHÂN TÍCH:\n"
+            res_text += "- Fs1: Tính DFT của ảnh gốc -> Hàm shifted() chuyển góc phần tư.\n"
+            res_text += "- Fs2: Nhân ảnh với (-1)^(x+y) -> Tính DFT -> Phổ tự động dịch về tâm.\n"
+            res_text += "=> Hai phương pháp cho kết quả tương đương (xem giá trị ma trận ở trên)."
+            
+            analysis_lbl.config(text=res_text)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"{e}")
+        finally:
+            app.config(cursor="")
+
+    btn_run = tk.Button(info_frame, text="Chạy DFT & So sánh", command=run_fourier,
+                       font=('Segoe UI', 10, 'bold'), bg='#8e44ad', fg='white',
+                       relief='flat', padx=20, pady=10)
+    btn_run.pack(anchor='w', pady=20)
+
+
+def create_idft_ui(app, info_frame):
+    """UI cho chức năng Biến đổi Fourier Ngược (IDFT)"""
+    title = tk.Label(info_frame, text="Biến đổi Fourier Ngược (IDFT)",
+                    font=('Segoe UI', 12, 'bold'),
+                    bg='white', fg='#2c3e50')
+    title.pack(anchor='w', pady=(0, 10))
+    
+    if app.original_image is None:
+        tk.Label(info_frame, text="Vui lòng tải ảnh lên trước.",
+                font=('Segoe UI', 9), bg='white', fg='#e74c3c').pack(anchor='w')
+        return
+
+    from features import fourier
+    import numpy as np
+    
+    desc = tk.Label(info_frame, text="Khôi phục ảnh từ miền tần số", 
+                   font=('Segoe UI', 9, 'italic'), bg='white', fg='#7f8c8d')
+    desc.pack(anchor='w', pady=(0, 15))
+    
+    # Analysis area
+    analysis_frame = tk.LabelFrame(info_frame, text="Phân tích & Kết quả", bg='white', font=('Segoe UI', 9, 'bold'))
+    analysis_frame.pack(fill='x', pady=10)
+    
+    analysis_lbl = tk.Label(analysis_frame, text="Nhấn Chạy để xem kết quả...", 
+                           bg='white', justify='left', wraplength=350, padx=5, pady=5, font=('Consolas', 9))
+    analysis_lbl.pack(fill='x')
+    
+    def run_idft():
+        try:
+            app.config(cursor="wait")
+            app.update()
+            
+            # 1. Resize logic same as DFT
+            target_size = (64, 64)
+            img_resized = app.original_image.convert("L").resize(target_size, Image.LANCZOS)
+            img_arr = np.array(img_resized, dtype=float)
+            
+            # --- Forward DFT (Bài 10.1) ---
+            print("Computing DFT...")
+            F = fourier.DFT_Fourier(img_arr)
+            Fs1 = fourier.shifted(F)
+            
+            # --- Inverse DFT Steps ---
+            print("Computing IDFT...")
+            
+            # 1. I_shifted(Fs1) -> F_restored
+            # Inverse of shift is shift itself (swapping quadrants back)
+            F_restored = fourier.I_shifted(Fs1)
+            
+            # Check F_restored vs F
+            diff_F = np.max(np.abs(F - F_restored))
+            
+            # 2. IDFT(F_restored) -> I1
+            I1 = fourier.IDFT_Fourier(F_restored)
+            
+            # 3. IDFT(Fs1) -> I2
+            I2 = fourier.IDFT_Fourier(Fs1)
+            
+            # 4. Correct I2 to get I3
+            # I3(x,y) = I2(x,y) * (-1)^(x+y)
+            M, N = I2.shape
+            x = np.arange(M).reshape(-1, 1)
+            y = np.arange(N).reshape(1, -1)
+            scaler = np.power(-1.0, x + y)
+            
+            I3 = I2 * scaler
+            
+            # 5. Compare I1 vs I3
+            diff_I = np.max(np.abs(I1 - I3))
+            is_equal = np.allclose(I1, I3, atol=1e-5)
+            
+            # 6. Compare I2 vs I (original) -> Difference Image
+            # I2 is "modulated" image. I is original.
+            # Just visualizing abs difference
+            # Note: I2 values might be complex or negative? IDFT returns real part now.
+            diff_img_arr = np.abs(I2 - img_arr)
+            
+            # Prepare images for display
+            def to_img(arr):
+                arr = np.clip(arr, 0, 255).astype(np.uint8)
+                return Image.fromarray(arr)
+            
+            img_i1 = to_img(I1)
+            img_i2 = to_img(I2) # This typically looks like checkerboard pattern
+            img_i3 = to_img(I3)
+            img_diff = to_img(diff_img_arr) # Difference between modulated and original
+            
+            app.processed_image = img_i1
+            
+            # Helper display (reused)
+            def show_result_images(imgs):
+                try: app.text_frame.pack_forget()
+                except: pass
+                app.canvas.master.pack(fill='both', expand=True)
+                app.canvas.delete("all")
+                
+                W = app.canvas.winfo_width()
+                H = app.canvas.winfo_height()
+                if W < 100: W = 800
+                if H < 100: H = 600
+                
+                count = len(imgs)
+                # Multi-row if count > 3
+                rows = 1
+                if count > 3: rows = 2
+                
+                cols = (count + rows - 1) // rows
+                
+                w_per_img = W // cols
+                h_per_img = (H - 50) // rows
+                
+                app.comparison_photos = []
+                
+                for i, (label, p_img) in enumerate(imgs):
+                    r = i // cols
+                    c = i % cols
+                    
+                    iw, ih = p_img.size
+                    ratio = min((w_per_img-20)/iw, (h_per_img-20)/ih)
+                    nw, nh = int(iw*ratio), int(ih*ratio)
+                    res = p_img.resize((nw, nh), Image.NEAREST)
+                    
+                    photo = ImageTk.PhotoImage(res)
+                    app.comparison_photos.append(photo)
+                    
+                    cx = c * w_per_img + w_per_img // 2
+                    cy = r * h_per_img + h_per_img // 2 + 30
+                    
+                    app.canvas.create_image(cx, cy, image=photo, anchor='center')
+                    app.canvas.create_text(cx, cy + nh//2 + 15, text=label, font=('Segoe UI', 10, 'bold'), fill='#2c3e50')
+
+            show_result_images([
+                ("Ảnh gốc (I)", img_resized),
+                ("I1 (ừ F phục hồi)", img_i1),
+                ("I2 (ừ Fs1 lệch tâm)", img_i2),
+                ("I3 (I2 đã hiệu chỉnh)", img_i3),
+                ("Sai khác I2 - I", img_diff)
+            ])
+            
+            # Analysis Text
+            res_text = f"KẾT QUẢ IDFT (Ảnh {target_size}):\n"
+            res_text += f"- Sai số phục hồi F (F vs I_shifted(Fs1)): {diff_F:.2e}\n"
+            res_text += f"- Sai số I1 vs I3: {diff_I:.2e}\n"
+            res_text += f"- Kết luận I1 ?= I3: {'GIỐNG NHAU' if is_equal else 'KHÁC NHAU'}\n\n"
+            res_text += "PHÂN TÍCH:\n"
+            res_text += "- I1: Phục hồi từ F chuẩn -> Ra ảnh gốc.\n"
+            res_text += "- I2: Phục hồi từ Fs1 (đã dịch phổ) -> Ra ảnh bị nhân với (-1)^(x+y) (dạng bàn cờ).\n"
+            res_text += "- I3: Hiệu chỉnh I2 bằng cách nhân lại với (-1)^(x+y) -> Khôi phục được ảnh gốc.\n"
+            res_text += "=> IDFT hoạt động chính xác."
+            
+            analysis_lbl.config(text=res_text)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"{e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            app.config(cursor="")
+
+    btn_run = tk.Button(info_frame, text="Chạy IDFT", command=run_idft,
+                       font=('Segoe UI', 10, 'bold'), bg='#c0392b', fg='white',
+                       relief='flat', padx=20, pady=10)
+    btn_run.pack(anchor='w', pady=20)

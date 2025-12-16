@@ -12,7 +12,9 @@ from ui.handlers import (
     create_adaptive_histogram_ui, create_convolution_ui,
     create_average_filter_ui, create_median_filter_ui,
     create_my_convolution_ui, create_edge_detection_ui,
-    create_laplace_features_ui
+    create_my_convolution_ui, create_edge_detection_ui,
+    create_laplace_features_ui, create_fourier_ui,
+    create_idft_ui
 )
 from utils.image_utils import resize_for_display, check_alpha_channel
 
@@ -121,7 +123,9 @@ class ImageApp(tk.Tk):
             "Lọc trung vị (Median)",
             "Demo Nhân chập (My Convolution)",
             "Dò biên (Edge Detection)",
-            "Laplace & LoG & Sharpening"
+            "Laplace & LoG & Sharpening",
+            "Biến đổi Fourier",
+            "Biến đổi Fourier Ngược"
         ]
         for f in funcs:
             self.func_listbox.insert(tk.END, f)
@@ -254,7 +258,9 @@ class ImageApp(tk.Tk):
             create_median_filter_ui,
             create_my_convolution_ui,
             create_edge_detection_ui,
-            create_laplace_features_ui
+            create_laplace_features_ui,
+            create_fourier_ui,
+            create_idft_ui
         ]
         
         if 0 <= idx < len(handlers):
