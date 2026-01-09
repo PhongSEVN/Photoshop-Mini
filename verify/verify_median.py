@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 
 # Add parent directory to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 try:
     from features import noise

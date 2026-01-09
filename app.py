@@ -20,24 +20,24 @@ from utils.image_utils import resize_for_display, check_alpha_channel
 
 
 class ImageApp(tk.Tk):
-    def __init__(self):
+    def __init__(self): # Khởi tạo cửa sổ
         super().__init__()
         self.title("Photoshop Mini")
         self.geometry("1200x700")
         self.configure(bg='#f0f0f0')
 
-        self.original_image = None
-        self.display_image = None
-        self.photo_image = None
-        self.current_filename = None
-        self.processed_image = None
-        self.original_mode = None
+        self.original_image = None # Biến lưu ảnh gốc
+        self.display_image = None # Biến lưu ảnh hiển thị
+        self.photo_image = None # Biến lưu ảnh hiển thị
+        self.current_filename = None # Biến lưu tên tệp hiện tại
+        self.processed_image = None # Biến lưu ảnh đã xử lý
+        self.original_mode = None # Biến lưu mode ảnh gốc
         self.has_alpha = False
 
         setup_styles()
         self._create_widgets()
 
-    def _create_widgets(self):
+    def _create_widgets(self): # Chia giao diện thành 2 phần chính
         # Main container
         main_container = tk.Frame(self, bg='#ecf0f1')
         main_container.pack(fill='both', expand=True, padx=0, pady=0)
@@ -69,8 +69,8 @@ class ImageApp(tk.Tk):
                               padx=20, pady=12)
         upload_btn.pack(fill='x')
         
-        # Hover effect
-        upload_btn.bind('<Enter>', lambda e: upload_btn.config(bg='#2980b9'))
+        # Hiệu ứng khi hover nút tải ảnh
+        upload_btn.bind('<Enter>', lambda e: upload_btn.config(bg='#1abc9c'))
         upload_btn.bind('<Leave>', lambda e: upload_btn.config(bg='#3498db'))
 
         self.filename_label = tk.Label(upload_card, 
@@ -80,7 +80,7 @@ class ImageApp(tk.Tk):
                                       wraplength=250, justify='left')
         self.filename_label.pack(fill='x', pady=(10, 0))
 
-        # Functions list
+        # Danh sách các chức năng
         functions_frame = tk.Frame(left_frame, bg='#34495e')
         functions_frame.pack(fill='both', expand=True, padx=15, pady=(0, 15))
 
@@ -89,7 +89,7 @@ class ImageApp(tk.Tk):
                              bg='#34495e', fg='white')
         func_title.pack(anchor='w', pady=(0, 10))
 
-        # Custom listbox style
+        # Tạo listbox
         listbox_frame = tk.Frame(functions_frame, bg='#2c3e50', relief='flat')
         listbox_frame.pack(fill='both', expand=True)
 
@@ -112,7 +112,7 @@ class ImageApp(tk.Tk):
             "Làm ảnh nhị phân (đen trắng)",
             "Tách kênh màu Đỏ",
             "Kiểm tra kênh Alpha (RGBA)",
-            "Tính 4 chỉ số (ma trận/ảnh)",
+            "Tính 4 chỉ số của ảnh",
             "Biến đổi ảnh",
             "Kéo dãn độ tương phản",
             "Cân bằng histogram tiêu chuẩn",
@@ -170,8 +170,7 @@ class ImageApp(tk.Tk):
         text_frame.pack_forget()
         self.text_frame = text_frame
 
-    def load_image(self):
-        """Tải ảnh từ file"""
+    def load_image(self): # Tải ảnh từ file
         filetypes = [
             ("Các tệp ảnh", "*.png;*.jpg;*.jpeg;*.bmp;*.gif"),
             ("Tất cả tệp", "*.*"),
@@ -192,10 +191,9 @@ class ImageApp(tk.Tk):
         self.current_filename = os.path.basename(path)
         self.filename_label.config(text=f"📄 {self.current_filename}", fg='#2ecc71')
         self.func_listbox.selection_clear(0, tk.END)
-        self.show_image(self.original_image)
+        self.show_image(self.original_image) # Hiển thị ảnh được chọn
 
-    def show_image(self, pil_image):
-        """Hiển thị ảnh trên canvas"""
+    def show_image(self, pil_image): # Hiển thị ảnh trên canvas
         # Hide text widget, show canvas
         try:
             self.text_frame.pack_forget()
@@ -204,7 +202,7 @@ class ImageApp(tk.Tk):
         self.canvas.master.pack(fill='both', expand=True)
         
         self.canvas.delete("all")
-        resized = resize_for_display(self.canvas, pil_image)
+        resized = resize_for_display(self.canvas, pil_image) # Thu nhỏ ảnh nếu quá to
         self.display_image = resized
 
         self.photo_image = ImageTk.PhotoImage(self.display_image)
@@ -212,21 +210,30 @@ class ImageApp(tk.Tk):
         h = self.canvas.winfo_height() or 600
         self.canvas.create_image(w // 2, h // 2, image=self.photo_image, anchor="center")
 
-    def show_text(self, content: str):
-        """Hiển thị text trên text widget"""
-        # Ẩn canvas, hiện text widget đẹp
+    def show_text(self, content: str): # Hiển thị text trên text widget
+        # Ẩn khung chứa ảnh (Canvas) đi nếu đang hiện
         try:
             self.canvas.master.pack_forget()
         except:
             pass
+        
+        # Mở khóa ô văn bản (trạng thái normal) để có thể chỉnh sửa/ghi nội dung mới
+        # (Nếu để state='disabled' thì người dùng chỉ đọc được chứ code không ghi vào được)
         self.text_widget.config(state="normal")
+        
+        # Xóa sạch nội dung cũ đang có trong widget (từ dòng 1 đầu tiên đến hết)
         self.text_widget.delete("1.0", tk.END)
+        
+        # Chèn nội dung văn bản mới vào cuối widget
         self.text_widget.insert(tk.END, content)
+        
+        # Hiển thị khung chứa văn bản lên giao diện (lấp đầy không gian trống)
         self.text_frame.pack(fill="both", expand=True)
+        
+        # Tự động cuộn màn hình lên vị trí đầu tiên (dòng 1) để người dùng dễ đọc
         self.text_widget.see("1.0")
 
-    def on_function_select(self, event):
-        """Xử lý khi chọn chức năng từ listbox"""
+    def on_function_select(self, event): # Xử lý khi chọn chức năng từ listbox
         sel = self.func_listbox.curselection()
         if not sel:
             return

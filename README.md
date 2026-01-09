@@ -1,5 +1,3 @@
 Photoshop Mini App
 
-Thư mục black-white: Xử lý với ảnh đen trắng (Loại này đã ngừng update)
-
-Thư mục RGB: Xử lý với ảnh màu
+Maybe, in the futue, this project will become a photo mini. Now it is a project at university

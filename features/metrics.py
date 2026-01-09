@@ -5,8 +5,9 @@ def compute_metrics_from_array(arr: np.ndarray):
     """Tính 4 chỉ số: độ sáng, độ tương phản, entropy, độ sắc nét"""
     a = np.asarray(arr, dtype=float)
 
-    mean = float(np.mean(a))
+    mean = float(np.mean(a)) # Độ sáng của ảnh
     contrast = float(np.std(a))
+    contrast = contrast*contrast #Tính độ tương phản
 
     vals = a.ravel()
     if np.issubdtype(a.dtype, np.integer) or np.all(np.mod(vals, 1) == 0):
@@ -16,7 +17,7 @@ def compute_metrics_from_array(arr: np.ndarray):
         counts, _ = np.histogram(vals, bins=256, range=(vals.min(), vals.max()))
         probs = counts / counts.sum()
     probs = probs[probs > 0]
-    entropy = float(-(probs * np.log2(probs)).sum())
+    entropy = float(-(probs * np.log2(probs)).sum()) # Tính entropy
 
     # Laplacian
     sobel_x = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], float)
@@ -33,7 +34,7 @@ def compute_metrics_from_array(arr: np.ndarray):
             gx[y, x] = np.sum(region * sobel_x)
             gy[y, x] = np.sum(region * sobel_y)
 
-    sharpness = float(np.mean(np.sqrt(gx**2 + gy**2)))
+    sharpness = float(np.mean(np.sqrt(gx**2 + gy**2))) # Độ sắc nét
 
     return {
         "mean": mean,

@@ -4,7 +4,7 @@ import os
 import numpy as np
 
 # Add parent directory to path so we can import features
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 try:
     from features import convolution

@@ -20,13 +20,8 @@ def apply_pixel_transform(original_image, has_alpha, op: str, c: float, base: fl
             s = 255 - r
 
         elif op == "log":
-            x = r / 255
-            if base <= 0 or base == 1:
-                messagebox.showerror("Lỗi", "Cơ số log không hợp lệ.")
-                return None
-            ln = np.log(1 + x)
-            s = c * (ln / np.log(base))
-            s = (s - s.min()) / (s.max() - s.min()) * 255
+
+            s = c * np.log(1 + r)
 
         elif op == "invlog":
             x = r / 255
